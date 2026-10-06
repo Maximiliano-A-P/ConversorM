@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConversorM</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header id="title">ConversorM</header>
+
+<main>
+  <section class="tarjeta" data-conversor="jpg">
+    <div class="tarjeta-cabecera">
+      <h2>Imágenes → JPG</h2>
+      <p>Convertí JFIF, WEBP, BMP, AVIF e ICO a un formato universal.</p>
+    </div>
+    <div class="tarjeta-cuerpo">
+      <label class="boton-archivo">Elegir imágenes
+        <input type="file"
+          accept=".jfif,.webp,.bmp,.avif,.ico,image/jfif,image/webp,image/bmp,image/avif,image/x-icon"
+          multiple hidden disabled>
+      </label>
+      <p class="contador">Imágenes seleccionadas: 0</p>
+      <div class="opciones">
+        <div class="opcion">
+          <label title="100 = máxima calidad / menor compresión">Calidad (quality, 0–100)</label>
+          <input type="number" data-opcion="quality" min="0" max="100" step="1" value="100">
+        </div>
+        <div class="opcion">
+          <label title="Reduce la información de color para bajar el tamaño">Submuestreo de color (subsampling)</label>
+          <select data-opcion="subsampling"><option value="444" selected>4:4:4 (color completo)</option><option value="420">4:2:0 (color a media resolución)</option></select>
+        </div>
+        <div class="opcion opcion-check">
+          <label title="Guarda la imagen en varias pasadas"><input type="checkbox" data-opcion="progressive"> Progresivo (progressive)</label>
+        </div>
+        <div class="opcion opcion-check">
+          <label title="Busca una codificación Huffman más eficiente"><input type="checkbox" data-opcion="optimize"> Optimizar tablas (optimize)</label>
+        </div>
+      </div>
+      <p class="ayuda">Valores por defecto = lo menos comprimido posible (calidad 100, color completo).</p>
+      <button class="btn-convertir" disabled>Convertir y descargar (.zip)</button>
+      <p class="estado"></p>
+    </div>
+  </section>
+
+  <section class="tarjeta" data-conversor="png">
+    <div class="tarjeta-cabecera">
+      <h2>Imágenes → PNG</h2>
+      <p>Convertí cualquier imagen a PNG, sin pérdida y con transparencia.</p>
+    </div>
+    <div class="tarjeta-cuerpo">
+      <label class="boton-archivo">Elegir imágenes
+        <input type="file"
+          accept="image/*,.jfif,.avif,.ico"
+          multiple hidden disabled>
+      </label>
+      <p class="contador">Imágenes seleccionadas: 0</p>
+      <div class="opciones">
+        <div class="opcion">
+          <label title="0 = sin comprimir, 9 = máxima compresión">Nivel de compresión (compression level, 0–9)</label>
+          <input type="number" data-opcion="nivel" min="0" max="9" step="1" value="0">
+        </div>
+        <div class="opcion">
+          <label title="Prepara las filas para que comprima mejor">Filtro (filter)</label>
+          <select data-opcion="filtro"><option value="ninguno" selected>Ninguno</option><option value="sub">Sub</option><option value="up">Up</option><option value="promedio">Promedio</option><option value="paeth">Paeth</option><option value="adaptativo">Adaptativo (el mejor por fila)</option></select>
+        </div>
+        <div class="opcion opcion-check">
+          <label title="Permite ver una vista previa mientras carga"><input type="checkbox" data-opcion="entrelazado"> Entrelazado (interlace, Adam7)</label>
+        </div>
+      </div>
+      <p class="ayuda">PNG nunca pierde calidad: estas opciones solo cambian el tamaño del archivo y cómo se guarda.</p>
+      <button class="btn-convertir" disabled>Convertir y descargar (.zip)</button>
+      <p class="estado"></p>
+    </div>
+  </section>
+
+  <section class="tarjeta" data-conversor="webp">
+    <div class="tarjeta-cabecera">
+      <h2>Imágenes → WebP</h2>
+      <p>Convertí cualquier imagen a WebP, liviano y con transparencia.</p>
+    </div>
+    <div class="tarjeta-cuerpo">
+      <label class="boton-archivo">Elegir imágenes
+        <input type="file"
+          accept="image/*,.jfif,.avif,.ico"
+          multiple hidden disabled>
+      </label>
+      <p class="contador">Imágenes seleccionadas: 0</p>
+      <div class="opciones">
+        <div class="opcion opcion-check">
+          <label title="Si está activo, quality pasa a ser el esfuerzo de compresión"><input type="checkbox" data-opcion="lossless" checked> Sin pérdida (lossless)</label>
+        </div>
+        <div class="opcion">
+          <label title="Con lossless: esfuerzo de compresión (más alto = más lento y más chico)">Calidad (quality, 0–100)</label>
+          <input type="number" data-opcion="quality" min="0" max="100" step="1" value="100">
+        </div>
+        <div class="opcion">
+          <label title="0 = rápido, 6 = más lento y más chico">Esfuerzo (method, 0–6)</label>
+          <input type="number" data-opcion="method" min="0" max="6" step="1" value="4">
+        </div>
+        <div class="opcion">
+          <label title="Solo con pérdida">Calidad de transparencia (alpha_quality, 0–100)</label>
+          <input type="number" data-opcion="alpha_quality" min="0" max="100" step="1" value="100" data-solo-lossy>
+        </div>
+        <div class="opcion" >
+          <label title="Solo con pérdida: pasadas de análisis">Pasadas (pass, 1–10)</label>
+          <input type="number" data-opcion="pass" min="1" max="10" step="1" value="1" data-solo-lossy>
+        </div>
+        <div class="opcion" >
+          <label title="Solo con pérdida: ajuste de detalle según la zona">Preservación de detalle (sns_strength, 0–100)</label>
+          <input type="number" data-opcion="sns_strength" min="0" max="100" step="1" value="50" data-solo-lossy>
+        </div>
+      </div>
+      <p class="ayuda">Por defecto sale sin pérdida. Si desactivás “lossless”, se habilitan las opciones con pérdida.</p>
+      <button class="btn-convertir" disabled>Convertir y descargar (.zip)</button>
+      <p class="estado"></p>
+    </div>
+  </section>
+
+  <!-- ========== Video → GIF ========== -->
+  <section class="tarjeta">
+    <div class="tarjeta-cabecera">
+      <h2>Video → GIF</h2>
+      <p>Subí un video, recortá el tiempo y seleccioná el área que querés animar.</p>
+    </div>
+    <div class="tarjeta-cuerpo">
+      <label class="boton-archivo" id="etiqueta_video" for="input_video">Elegir video</label>
+      <input id="input_video" type="file" accept="video/*" hidden disabled>
+
+      <div id="zona_video" hidden>
+        <div id="marco_video">
+          <video id="video_preview" playsinline></video>
+          <div id="recorte"><div id="asa"></div></div>
+          <div id="overlay_generando">Generando GIF, esperá un momento…</div>
+        </div>
+
+        <div id="controles_video">
+          <button id="btn_retroceder" type="button" title="Retroceder 5s">⏪ 5s</button>
+          <button id="btn_reproducir" type="button" title="Reproducir / pausar">▶️</button>
+          <button id="btn_adelantar" type="button" title="Adelantar 5s">5s ⏩</button>
+          <span id="tiempo_video">0:00 / 0:00</span>
+        </div>
+
+        <div class="paso">
+          <span class="numero">1</span>
+          <div>
+            <label>Recorte de tiempo (segundos)</label>
+            <div class="rango-tiempo">
+              <input id="input_inicio" type="number" min="0" step="0.1" value="0"> a
+              <input id="input_fin" type="number" min="0" step="0.1" value="0">
+            </div>
+          </div>
+        </div>
+
+        <div class="paso">
+          <span class="numero">2</span>
+          <label>Arrastrá el recuadro celeste para elegir el área (usá la esquina para cambiar el tamaño)</label>
+        </div>
+
+        <button id="btn_generar_gif">Generar GIF</button>
+        <p id="estado_gif"></p>
+        <div id="resultado_gif"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Análisis de compresión ========== -->
+  <section class="tarjeta">
+    <div class="tarjeta-cabecera">
+      <h2>Analizar compresión</h2>
+      <p>Subí una imagen cualquiera y te digo qué tipo de compresión tiene.</p>
+    </div>
+    <div class="tarjeta-cuerpo">
+      <label class="boton-archivo">Elegir imagen
+        <input id="input_analisis" type="file" accept="image/*,.jfif,.avif,.ico" hidden disabled>
+      </label>
+      <p id="estado_analisis"></p>
+      <dl id="resultado_analisis" class="analisis"></dl>
+    </div>
+  </section>
+</main>
+
+<canvas id="lienzo_video" hidden></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="js/vendor/codecs.js"></script>
+<script src="js/png.js"></script>
+<script src="js/analisis.js"></script>
+<script src="js/gif.js"></script>
+<script src="js/fn.js"></script>
+</body>
+</html>
