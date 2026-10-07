@@ -231,7 +231,7 @@
     ];
 
     // filtros: hay que descomprimir los datos para leer el byte de filtro de cada fila
-    if (pako && idatBytes < 64 * 1024 * 1024) {
+    if (pako) {
       try {
         const unido = new Uint8Array(idatBytes);
         let p = 0;

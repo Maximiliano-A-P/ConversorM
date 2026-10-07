@@ -138,17 +138,29 @@
         <div id="controles_video">
           <button id="btn_retroceder" type="button" title="Retroceder 5s">⏪ 5s</button>
           <button id="btn_reproducir" type="button" title="Reproducir / pausar">▶️</button>
+          <button id="btn_inicio" type="button" title="Ir al inicio del recorte (desde X)">⏮ Inicio</button>
           <button id="btn_adelantar" type="button" title="Adelantar 5s">5s ⏩</button>
-          <span id="tiempo_video">0:00 / 0:00</span>
+          <span id="tiempo_video">0.000 / 0.000 seg</span>
+        </div>
+
+        <div id="ajustes_video">
+          <div class="ajuste">
+            <label for="input_salto">Salto de adelantar / retroceder (seg)</label>
+            <input id="input_salto" type="number" min="0.1" step="0.1" value="5">
+          </div>
+          <div class="ajuste">
+            <label for="input_velocidad">Velocidad (%) — 100 = normal, 200 = el doble, 10 = una décima</label>
+            <input id="input_velocidad" type="number" min="10" max="1000" step="1" value="100">
+          </div>
         </div>
 
         <div class="paso">
           <span class="numero">1</span>
           <div>
-            <label>Recorte de tiempo (segundos)</label>
+            <label>Recorte de tiempo (segundos): la reproducción se limita a este tramo</label>
             <div class="rango-tiempo">
-              <input id="input_inicio" type="number" min="0" step="0.1" value="0"> a
-              <input id="input_fin" type="number" min="0" step="0.1" value="0">
+              <input id="input_inicio" type="number" min="0" step="0.001" value="0"> a
+              <input id="input_fin" type="number" min="0" step="0.001" value="0">
             </div>
           </div>
         </div>
@@ -156,6 +168,21 @@
         <div class="paso">
           <span class="numero">2</span>
           <label>Arrastrá el recuadro celeste para elegir el área (usá la esquina para cambiar el tamaño)</label>
+        </div>
+
+        <div class="paso">
+          <span class="numero">3</span>
+          <div>
+            <label>Tamaño del GIF en píxeles (se calcula solo con el recuadro celeste, pero podés cambiarlo)</label>
+            <div class="rango-tiempo">
+              <input id="input_ancho" type="number" min="1" step="1" value="0"> ancho ×
+              <input id="input_alto" type="number" min="1" step="1" value="0"> alto
+            </div>
+            <label class="sub-label">Fotogramas por segundo del GIF (por defecto los del video; un GIF admite hasta 50)</label>
+            <div class="rango-tiempo">
+              <input id="input_fps" type="number" min="1" step="any" value="30"> fps
+            </div>
+          </div>
         </div>
 
         <button id="btn_generar_gif">Generar GIF</button>

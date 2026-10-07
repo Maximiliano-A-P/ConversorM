@@ -147,6 +147,7 @@ button:hover:not(:disabled) { background: #163a47; }
 
 #controles_video {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1vw;
   margin-top: 1vh;
@@ -163,7 +164,30 @@ button:hover:not(:disabled) { background: #163a47; }
 #tiempo_video {
   font-size: 1.6vh;
   color: #555;
+  font-variant-numeric: tabular-nums;
 }
+
+#ajustes_video {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2vh 3vw;
+  margin-top: 2vh;
+}
+
+.ajuste label {
+  display: block;
+  font-size: 1.6vh;
+  color: #555;
+  margin-bottom: 0.6vh;
+}
+
+.ajuste input {
+  width: 6em;
+  font-size: 1.8vh;
+  padding: 0.6vh 0.6vw;
+}
+
+.ajuste input:disabled { opacity: 0.5; cursor: not-allowed; }
 
 #marco_video {
   position: relative;
@@ -238,7 +262,8 @@ button:hover:not(:disabled) { background: #163a47; }
 }
 
 .rango-tiempo { margin-top: 0.6vh; }
-.rango-tiempo input { width: 4.5em; font-size: 1.6vh; }
+.sub-label { display: block; margin-top: 1.5vh; }
+.rango-tiempo input { width: 6.5em; font-size: 1.6vh; }
 
 #estado_gif { font-size: 1.6vh; color: #555; }
 

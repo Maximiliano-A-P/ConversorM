@@ -241,7 +241,7 @@ function iniciarConversor(tarjeta) {
           convertidas++;
         } catch (error) {
           console.error('Error procesando:', archivo.name, error);
-          fallidos.push(`${archivo.name} (${error && error.message ? error.message : error})`); 
+          fallidos.push(`${archivo.name} (${error && error.message ? error.message : error})`);
         }
         // deja respirar a la interfaz entre imagen e imagen
         await new Promise(r => setTimeout(r, 0));
@@ -286,10 +286,36 @@ const estadoGif = document.querySelector('#estado_gif');
 const resultadoGif = document.querySelector('#resultado_gif');
 const overlayGenerando = document.querySelector('#overlay_generando');
 
+const btnRetroceder = document.querySelector('#btn_retroceder');
+const btnReproducir = document.querySelector('#btn_reproducir');
+const btnInicio = document.querySelector('#btn_inicio');
+const btnAdelantar = document.querySelector('#btn_adelantar');
+const tiempoVideo = document.querySelector('#tiempo_video');
+const inputSalto = document.querySelector('#input_salto');
+const inputVelocidad = document.querySelector('#input_velocidad');
+const inputAncho = document.querySelector('#input_ancho');
+const inputAlto = document.querySelector('#input_alto');
+const inputFps = document.querySelector('#input_fps');
+
+/* true mientras se capturan los fotogramas: nada puede tocar el video */
+let generandoGif = false;
+/* true mientras se mide la cantidad de fotogramas por segundo del video */
+let detectandoFps = false;
+let urlVideoActual = null;
+
+const limitar = (valor, min, max) => Math.max(min, Math.min(max, valor));
+
+function leerNumero(input, porDefecto) {
+  const v = parseFloat(input.value);
+  return Number.isFinite(v) ? v : porDefecto;
+}
+
 inputVideo.addEventListener('change', (evento) => {
   const archivo = evento.target.files[0];
   if (!archivo) return;
-  video.src = URL.createObjectURL(archivo);
+  if (urlVideoActual) URL.revokeObjectURL(urlVideoActual);
+  urlVideoActual = URL.createObjectURL(archivo);
+  video.src = urlVideoActual;
   zonaVideo.hidden = false;
   resultadoGif.innerHTML = '';
   estadoGif.textContent = '';
@@ -303,49 +329,272 @@ function ajustarTamanoMarco() {
   marco.style.width = anchoFinal + 'px';
 }
 
+/* ---------- Tamaño del GIF (paso 3) ---------- */
+/* Por defecto = tamaño real del video × fracción (0–1) que ocupa el recuadro celeste.
+   Se recalcula cuando cambia el tamaño del recuadro; mover el recuadro no lo altera. */
+function actualizarMedidasDesdeRecuadro() {
+  if (!video.videoWidth || !video.videoHeight) return;
+  const marcoRect = marco.getBoundingClientRect();
+  if (!marcoRect.width || !marcoRect.height) return;
+  const fraccionAncho = recorte.offsetWidth / marcoRect.width;
+  const fraccionAlto = recorte.offsetHeight / marcoRect.height;
+  inputAncho.value = Math.max(1, Math.round(video.videoWidth * fraccionAncho));
+  inputAlto.value = Math.max(1, Math.round(video.videoHeight * fraccionAlto));
+}
+
+function normalizarMedida(input) {
+  const v = Math.round(leerNumero(input, 0));
+  if (v >= 1) input.value = v; else actualizarMedidasDesdeRecuadro();
+}
+
+inputAncho.addEventListener('change', () => normalizarMedida(inputAncho));
+inputAlto.addEventListener('change', () => normalizarMedida(inputAlto));
+
+/* ---------- Fotogramas por segundo (fps) del video ---------- */
+/* El navegador no dice los fps del video: se miden reproduciéndolo un instante, en silencio,
+   y mirando el tiempo exacto de cada fotograma que se dibuja. */
+function medirFps() {
+  return new Promise((resolve) => {
+    if (!video.requestVideoFrameCallback) { resolve(null); return; }
+    const tiempos = [];
+    const silenciadoAntes = video.muted;
+    let terminado = false;
+
+    const terminar = () => {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(limite);
+      video.pause();
+      video.muted = silenciadoAntes;
+      const diferencias = [];
+      for (let i = 1; i < tiempos.length; i++) {
+        const d = tiempos[i] - tiempos[i - 1];
+        if (d > 0.0005) diferencias.push(d);
+      }
+      if (diferencias.length < 3) { resolve(null); return; }
+      diferencias.sort((a, b) => a - b);
+      // los tiempos vienen redondeados al milisegundo: se estima la duración de un fotograma
+      // (mediana) y se cuentan cuántos caben en todo el tramo medido, lo que promedia el error
+      const duracionFotograma = diferencias[Math.floor(diferencias.length / 2)];
+      const tramo = tiempos[tiempos.length - 1] - tiempos[0];
+      const cuenta = Math.max(1, Math.round(tramo / duracionFotograma));
+      resolve(cuenta / tramo);
+    };
+
+    const alFotograma = (_ahora, meta) => {
+      if (terminado) return;
+      tiempos.push(meta.mediaTime);
+      if (tiempos.length >= 20) terminar(); else video.requestVideoFrameCallback(alFotograma);
+    };
+
+    const limite = setTimeout(terminar, 2500);
+    video.muted = true;
+    video.playbackRate = 1;
+    video.requestVideoFrameCallback(alFotograma);
+    video.play().catch(terminar);
+  });
+}
+
+async function detectarFpsDelVideo() {
+  detectandoFps = true;
+  bloquearEdicion(true);
+  estadoGif.textContent = 'Leyendo los fotogramas por segundo del video...';
+  try {
+    const fps = await medirFps();
+    // si queda a menos de 0,5 % de un entero (30,04 -> 30) se usa el entero
+    const entero = fps ? Math.round(fps) : 0;
+    inputFps.value = !fps ? 30 : (Math.abs(fps - entero) / entero < 0.005 ? entero : Math.round(fps * 100) / 100);
+  } catch (error) {
+    console.error('No se pudieron medir los fps:', error);
+    inputFps.value = 30;
+  } finally {
+    video.currentTime = 0;
+    aplicarVelocidad();
+    detectandoFps = false;
+    bloquearEdicion(false);
+    estadoGif.textContent = '';
+  }
+}
+
+inputFps.addEventListener('change', () => {
+  const v = leerNumero(inputFps, 30);
+  inputFps.value = v >= 1 ? v : 30;
+});
+
+/* ---------- Tramo (desde X hasta Y) ---------- */
+let rango = { inicio: 0, fin: 0, valido: false };
+
+function refrescarRango() {
+  const dur = video.duration;
+  if (!isFinite(dur) || dur <= 0) {
+    rango = { inicio: 0, fin: 0, valido: false };
+    return rango;
+  }
+  const inicio = limitar(leerNumero(inputInicio, 0), 0, dur);
+  const fin = limitar(leerNumero(inputFin, dur), 0, dur);
+  rango = { inicio, fin, valido: fin > inicio };
+  return rango;
+}
+
+/* Límites que se usan para reproducir: el tramo elegido o, si no es válido, el video entero */
+function limitesReproduccion() {
+  return rango.valido ? [rango.inicio, rango.fin] : [0, video.duration || 0];
+}
+
+function llevarAlTramo() {
+  const [ini, fin] = limitesReproduccion();
+  if (video.currentTime < ini || video.currentTime > fin) video.currentTime = ini;
+}
+
+function alCambiarRango() {
+  refrescarRango();
+  llevarAlTramo();
+}
+
+inputInicio.addEventListener('input', alCambiarRango);
+inputFin.addEventListener('input', alCambiarRango);
+
+function normalizarRango() {
+  const r = refrescarRango();
+  if (!isFinite(video.duration)) return;
+  inputInicio.value = r.inicio;
+  inputFin.value = r.fin;
+  estadoGif.textContent = r.valido ? '' : 'El fin debe ser mayor que el inicio (mientras tanto se reproduce el video completo).';
+  llevarAlTramo();
+}
+
+inputInicio.addEventListener('change', normalizarRango);
+inputFin.addEventListener('change', normalizarRango);
+
+/* ---------- Velocidad de reproducción (100 = normal) ---------- */
+function leerPorcentaje() {
+  return limitar(leerNumero(inputVelocidad, 100), 10, 1000);
+}
+
+function aplicarVelocidad() {
+  const factor = leerPorcentaje() / 100;
+  video.defaultPlaybackRate = factor;
+  video.playbackRate = factor;
+}
+
+inputVelocidad.addEventListener('input', aplicarVelocidad);
+inputVelocidad.addEventListener('change', () => {
+  inputVelocidad.value = leerPorcentaje();
+  aplicarVelocidad();
+});
+
+/* ---------- Salto de los botones de adelantar / retroceder ---------- */
+function leerSalto() {
+  return Math.max(0.001, leerNumero(inputSalto, 5));
+}
+
+function actualizarEtiquetasSalto() {
+  const texto = `${Number(leerSalto().toFixed(3))}s`;
+  btnRetroceder.textContent = `⏪ ${texto}`;
+  btnAdelantar.textContent = `${texto} ⏩`;
+  btnRetroceder.title = `Retroceder ${texto}`;
+  btnAdelantar.title = `Adelantar ${texto}`;
+}
+
+inputSalto.addEventListener('input', actualizarEtiquetasSalto);
+inputSalto.addEventListener('change', () => {
+  inputSalto.value = Number(leerSalto().toFixed(3));
+  actualizarEtiquetasSalto();
+});
+
+/* ---------- Tiempo con milisegundos ---------- */
+function formatoTiempo(segundos) {
+  return isFinite(segundos) ? segundos.toFixed(3) : '0.000';
+}
+
+function actualizarTiempo() {
+  tiempoVideo.textContent = `${formatoTiempo(video.currentTime)} / ${formatoTiempo(video.duration)} seg`;
+}
+
+/* ---------- Metadatos: valores iniciales (desde 0 hasta la duración) ---------- */
 video.addEventListener('loadedmetadata', () => {
+  const dur = video.duration;
+  inputInicio.min = 0;
+  inputInicio.max = dur;
   inputInicio.value = 0;
-  inputInicio.max = video.duration;
-  inputFin.value = Math.min(3, video.duration).toFixed(1);
-  inputFin.max = video.duration;
+  inputFin.min = 0;
+  inputFin.max = dur;
+  inputFin.value = (Math.floor(dur * 1000) / 1000).toFixed(3);
+  refrescarRango();
+  aplicarVelocidad();
+  actualizarEtiquetasSalto();
+  actualizarTiempo();
   ajustarTamanoMarco();
   recorte.style.left = '10%';
   recorte.style.top = '10%';
   recorte.style.width = '80%';
   recorte.style.height = '80%';
+  actualizarMedidasDesdeRecuadro();
+  detectarFpsDelVideo();
 });
 
-window.addEventListener('resize', () => { if (video.videoWidth) ajustarTamanoMarco(); });
+window.addEventListener('resize', () => {
+  if (!video.videoWidth) return;
+  ajustarTamanoMarco();
+  actualizarMedidasDesdeRecuadro();
+});
 
-/* ---------- Controles propios del video ---------- */
-const btnRetroceder = document.querySelector('#btn_retroceder');
-const btnReproducir = document.querySelector('#btn_reproducir');
-const btnAdelantar = document.querySelector('#btn_adelantar');
-const tiempoVideo = document.querySelector('#tiempo_video');
+/* ---------- Reproducción dentro del tramo ---------- */
+let idBucle = null;
 
-function formatoTiempo(segundos) {
-  if (!isFinite(segundos)) return '0:00';
-  const m = Math.floor(segundos / 60);
-  const s = Math.floor(segundos % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
+function bucle() {
+  idBucle = null;
+  if (!video.paused && !generandoGif && !detectandoFps) {
+    const [ini, fin] = limitesReproduccion();
+    // al llegar al final del tramo vuelve al inicio (repite)
+    if (video.currentTime >= fin) video.currentTime = ini;
+  }
+  actualizarTiempo();
+  if (!video.paused) idBucle = requestAnimationFrame(bucle);
 }
 
+function arrancarBucle() {
+  if (idBucle === null) idBucle = requestAnimationFrame(bucle);
+}
+
+video.addEventListener('play', () => { btnReproducir.textContent = '⏸️'; arrancarBucle(); });
+video.addEventListener('pause', () => {
+  btnReproducir.textContent = '▶️';
+  if (idBucle !== null) { cancelAnimationFrame(idBucle); idBucle = null; }
+  actualizarTiempo();
+});
+video.addEventListener('timeupdate', actualizarTiempo);
+video.addEventListener('seeked', actualizarTiempo);
+
+/* si el tramo llega hasta el final del video, 'ended' también repite */
+video.addEventListener('ended', () => {
+  if (generandoGif || detectandoFps) return;
+  const [ini] = limitesReproduccion();
+  video.currentTime = ini;
+  video.play().catch(() => {});
+});
+
+/* ---------- Controles propios del video ---------- */
 btnRetroceder.addEventListener('click', () => {
-  video.currentTime = Math.max(0, video.currentTime - 5);
+  const [ini, fin] = limitesReproduccion();
+  video.currentTime = limitar(video.currentTime - leerSalto(), ini, fin);
 });
 
 btnAdelantar.addEventListener('click', () => {
-  video.currentTime = Math.min(video.duration || 0, video.currentTime + 5);
+  const [ini, fin] = limitesReproduccion();
+  video.currentTime = limitar(video.currentTime + leerSalto(), ini, fin);
+});
+
+btnInicio.addEventListener('click', () => {
+  const [ini] = limitesReproduccion();
+  video.currentTime = ini;
 });
 
 btnReproducir.addEventListener('click', () => {
-  if (video.paused) video.play(); else video.pause();
-});
-
-video.addEventListener('play', () => { btnReproducir.textContent = '⏸️'; });
-video.addEventListener('pause', () => { btnReproducir.textContent = '▶️'; });
-video.addEventListener('timeupdate', () => {
-  tiempoVideo.textContent = `${formatoTiempo(video.currentTime)} / ${formatoTiempo(video.duration)}`;
+  if (!video.paused) { video.pause(); return; }
+  const [ini, fin] = limitesReproduccion();
+  if (video.currentTime < ini || video.currentTime >= fin - 0.001) video.currentTime = ini;
+  video.play().catch(() => {});
 });
 
 /* ---------- Arrastrar y redimensionar el recuadro de selección ---------- */
@@ -381,6 +630,7 @@ document.addEventListener('mousemove', (e) => {
     nuevoAlto = Math.max(30, Math.min(nuevoAlto, marcoRect.height - recorte.offsetTop));
     recorte.style.width = nuevoAncho + 'px';
     recorte.style.height = nuevoAlto + 'px';
+    actualizarMedidasDesdeRecuadro();
   }
 });
 
@@ -403,14 +653,29 @@ function seekTo(t) {
   });
 }
 
-btnGenerarGif.addEventListener('click', async () => {
-  const inicio = parseFloat(inputInicio.value) || 0;
-  const fin = parseFloat(inputFin.value) || 0;
-  if (fin <= inicio) { estadoGif.textContent = 'El fin debe ser mayor que el inicio.'; return; }
+/* ---------- Generar el GIF ---------- */
+const controlesEdicion = [
+  btnRetroceder, btnReproducir, btnInicio, btnAdelantar,
+  inputSalto, inputVelocidad, inputInicio, inputFin, inputAncho, inputAlto, inputFps
+];
 
-  // bloquear todo lo que pueda cambiar el video mientras se generan los fotogramas
-  btnGenerarGif.disabled = true;
-  inputVideo.disabled = true;
+/* bloquea todo lo que pueda cambiar el video mientras se generan los fotogramas */
+function bloquearEdicion(bloquear) {
+  controlesEdicion.forEach((c) => { c.disabled = bloquear; });
+  btnGenerarGif.disabled = bloquear;
+  inputVideo.disabled = bloquear;
+}
+
+btnGenerarGif.addEventListener('click', async () => {
+  if (generandoGif) return;
+
+  const r = refrescarRango();
+  if (!r.valido) { estadoGif.textContent = 'El fin debe ser mayor que el inicio.'; return; }
+  const { inicio, fin } = r;
+  const factor = leerPorcentaje() / 100;
+
+  generandoGif = true;
+  bloquearEdicion(true);
   resultadoGif.innerHTML = '';
   estadoGif.textContent = 'Preparando fotogramas...';
 
@@ -427,12 +692,28 @@ btnGenerarGif.addEventListener('click', async () => {
   const sw = recorte.offsetWidth * escalaX;
   const sh = recorte.offsetHeight * escalaY;
 
-  const anchoSalida = Math.min(480, sw);
-  const altoSalida = sh * (anchoSalida / sw);
+  // tamaño del GIF: lo que muestran los inputs; si alguno no es válido, el del recuadro
+  const anchoSalida = Math.max(1, Math.round(leerNumero(inputAncho, 0)) || Math.round(sw));
+  const altoSalida = Math.max(1, Math.round(leerNumero(inputAlto, 0)) || Math.round(sh));
+  inputAncho.value = anchoSalida;
+  inputAlto.value = altoSalida;
   lienzoVideo.width = anchoSalida;
   lienzoVideo.height = altoSalida;
+  ctxVideo.imageSmoothingQuality = 'high';
 
-  const fps = 10;
+  /* Fotogramas por segundo del GIF: los del input (por defecto los del video).
+     Un GIF guarda cada tiempo en centésimas de segundo y los navegadores no respetan
+     menos de 2 (20 ms), así que el máximo real es 50 fps.
+     Velocidad: cada fotograma capturado avanza (velocidad / fps) segundos de video. */
+  const fpsPedido = Math.max(1, leerNumero(inputFps, 30));
+  const fpsGif = Math.min(fpsPedido, 50);
+  const retardoIdeal = 1000 / fpsGif;                        // ms que debería durar cada fotograma
+  const redondear10 = (ms) => Math.round(ms / 10) * 10;      // los tiempos del GIF son múltiplos de 10 ms
+  const duracionTramo = fin - inicio;
+  const paso = factor / fpsGif;
+  const cantidad = Math.max(1, Math.round(duracionTramo / paso));
+  const tiempoMaximo = Math.max(0, video.duration - 0.001);
+
   const gif = new GIF({
     workers: 2,
     quality: 10,
@@ -444,17 +725,21 @@ btnGenerarGif.addEventListener('click', async () => {
   // deja la interfaz utilizable de nuevo, pase lo que pase
   const restaurarInterfaz = () => {
     overlayGenerando.style.display = 'none';
+    generandoGif = false;
     video.currentTime = tiempoOriginal;
-    if (!estabaPausado) video.play();
-    btnGenerarGif.disabled = false;
-    inputVideo.disabled = false;
+    if (!estabaPausado) video.play().catch(() => {});
+    bloquearEdicion(false);
   };
 
   try {
-    for (let t = inicio; t <= fin; t += 1 / fps) {
+    for (let i = 0; i < cantidad; i++) {
+      estadoGif.textContent = `Capturando fotograma ${i + 1} de ${cantidad}...`;
+      const t = Math.min(inicio + i * paso, fin, tiempoMaximo);
       await seekTo(t);
       ctxVideo.drawImage(video, sx, sy, sw, sh, 0, 0, anchoSalida, altoSalida);
-      gif.addFrame(ctxVideo, { copy: true, delay: 1000 / fps });
+      // se reparte el redondeo entre fotogramas para que la duración total sea exacta (30 fps -> 30/30/40 ms)
+      const retardo = Math.max(20, redondear10((i + 1) * retardoIdeal) - redondear10(i * retardoIdeal));
+      gif.addFrame(ctxVideo, { copy: true, delay: retardo });
     }
   } catch (error) {
     console.error('Error capturando fotogramas:', error);
@@ -476,7 +761,9 @@ btnGenerarGif.addEventListener('click', async () => {
     botonDescargarGif.addEventListener('click', () => descargarArchivo('animacion.gif', blob));
     resultadoGif.appendChild(botonDescargarGif);
 
-    estadoGif.textContent = 'Listo.';
+    estadoGif.textContent = fpsPedido > 50
+      ? 'Listo. Un GIF no puede pasar de 50 fps, se usaron 50.'
+      : 'Listo.';
   });
   gif.render();
 });
