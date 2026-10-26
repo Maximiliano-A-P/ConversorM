@@ -282,6 +282,9 @@ button:hover:not(:disabled) { background: #163a47; }
 }
 
 /* ---------- Tarjeta de análisis ---------- */
+.fila-botones { display: flex; align-items: center; gap: 1.5vw; flex-wrap: wrap; }
+.fila-botones button { margin-top: 0; }
+
 #estado_analisis { font-size: 1.6vh; color: #555; }
 
 .analisis {

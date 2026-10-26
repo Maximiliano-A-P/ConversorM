@@ -199,9 +199,12 @@
       <p>Subí una imagen cualquiera y te digo qué tipo de compresión tiene.</p>
     </div>
     <div class="tarjeta-cuerpo">
-      <label class="boton-archivo">Elegir imagen
-        <input id="input_analisis" type="file" accept="image/*,.jfif,.avif,.ico" hidden disabled>
-      </label>
+      <div class="fila-botones">
+        <label class="boton-archivo">Elegir imagen
+          <input id="input_analisis" type="file" accept="image/*,.jfif,.avif,.ico" hidden disabled>
+        </label>
+        <button id="btn_tomar_valores" type="button" disabled title="Copia los valores de la imagen analizada a la tarjeta de su mismo formato">Tomar valores</button>
+      </div>
       <p id="estado_analisis"></p>
       <dl id="resultado_analisis" class="analisis"></dl>
     </div>

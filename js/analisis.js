@@ -130,6 +130,10 @@
       else entropia = `Huffman con tablas parcialmente optimizadas (${claves.length - iguales} de ${claves.length} distintas de las estándar)`;
     }
 
+    const valores = { progressive: progresivo };
+    if (!aritmetico && Object.keys(huffman).length > 0) {
+      valores.optimize = Object.keys(huffman).some(k => !(HUFFMAN_ESTANDAR[k] && HUFFMAN_ESTANDAR[k].join() === huffman[k].join()));
+    }
     const filas = [
       ['Modo', progresivo ? 'Progresivo (progressive activado)' : 'Secuencial / baseline (progressive desactivado)'],
       ['Codificación de entropía', entropia]
@@ -137,7 +141,9 @@
     if (progresivo) filas.push(['Escaneos', String(escaneos)]);
 
     if (sof.componentes >= 3) {
-      filas.push(['Submuestreo de color (subsampling)', nombreSubmuestreo(sof.hv >> 4, sof.hv & 15)]);
+      const nombreSub = nombreSubmuestreo(sof.hv >> 4, sof.hv & 15);
+      filas.push(['Submuestreo de color (subsampling)', nombreSub]);
+      valores.subsampling = nombreSub.replace(/:/g, '');   // '4:2:0' -> '420'
     } else {
       filas.push(['Color', 'Escala de grises (1 componente)']);
     }
@@ -145,6 +151,7 @@
     if (!sinPerdida) {
       const qL = estimarCalidadJPEG(tablasQ[0], SUMA_LUMINANCIA_ESTANDAR);
       const qC = estimarCalidadJPEG(tablasQ[1], SUMA_CROMINANCIA_ESTANDAR);
+      if (qL !== null) valores.quality = qL;
       if (qL !== null) filas.push(['Calidad estimada (quality)', `≈ ${qL} / 100 (luminancia, asumiendo tablas estándar de libjpeg)`]);
       if (qC !== null && sof.componentes >= 3) filas.push(['Calidad estimada del color', `≈ ${qC} / 100 (crominancia)`]);
     }
@@ -155,7 +162,7 @@
     return {
       formato: 'JPEG',
       tipo: sinPerdida ? 'Sin pérdida (JPEG lossless)' : 'Con pérdida',
-      ancho: sof.ancho, alto: sof.alto, filas
+      ancho: sof.ancho, alto: sof.alto, filas, valores
     };
   }
 
@@ -225,6 +232,11 @@
       ? 'Nivel 0 (sin comprimir, bloques almacenados)'
       : ['Nivel 1 (más rápido)', 'Niveles 2–5 (rápido)', 'Nivel 6 (por defecto)', 'Niveles 7–9 (máximo)'][flevel];
 
+    // el archivo solo guarda 4 rangos de nivel: se toma un valor representativo de cada uno
+    const valores = {
+      nivel: almacenado ? 0 : [1, 3, 6, 9][flevel],
+      entrelazado: !!ihdr.entrelazado
+    };
     const filas = [
       ['Nivel de compresión (compression level, indicativo)', nivel],
       ['Entrelazado (interlace)', ihdr.entrelazado ? 'Activado (Adam7)' : 'Desactivado']
@@ -242,8 +254,10 @@
           const usados = cuentas.map((n, k) => [k, n]).filter(([, n]) => n > 0);
           const totalFilas = cuentas.reduce((a, n) => a + n, 0);
           if (usados.length === 1) {
+            valores.filtro = ['ninguno', 'sub', 'up', 'promedio', 'paeth'][usados[0][0]];
             filas.push(['Filtro (filter)', `${NOMBRES_FILTRO[usados[0][0]]} (todas las filas)`]);
           } else {
+            valores.filtro = 'adaptativo';
             const detalle = usados.map(([k, n]) => `${NOMBRES_FILTRO[k]} ${Math.round(n * 100 / totalFilas)} %`).join(', ');
             filas.push(['Filtro (filter)', `Adaptativo por fila: ${detalle}`]);
           }
@@ -260,7 +274,7 @@
     if (apng) filas.push(['Animación', 'Sí (APNG)']);
     if (extras.size) filas.push(['Bloques adicionales', Array.from(extras).join(', ')]);
 
-    return { formato: 'PNG', tipo: 'Sin pérdida (deflate)', ancho: ihdr.ancho, alto: ihdr.alto, filas };
+    return { formato: 'PNG', tipo: 'Sin pérdida (deflate)', ancho: ihdr.ancho, alto: ihdr.alto, filas, valores };
   }
 
   /* =====================================================================
@@ -369,6 +383,8 @@
     else if (tipos.has('lossless')) tipo = 'Sin pérdida (VP8L, lossless activado)';
 
     const filas = [];
+    const valores = {};
+    if (tipos.size === 1) valores.lossless = tipos.has('lossless');
 
     if (vp8) {
       let qi = vp8.yac;
@@ -378,6 +394,8 @@
         qi = Math.round(qs.reduce((a, v) => a + v, 0) / 4);
         rango = [Math.min(...qs), Math.max(...qs)];
       }
+      valores.quality = calidadDesdeIndice(qi);
+      if (!vp8.segmentacion || (rango && rango[0] === rango[1])) valores.sns_strength = 0;
       filas.push(['Calidad estimada (quality)', `≈ ${calidadDesdeIndice(qi)} / 100 (a partir del índice de cuantización ${qi} de 127)`]);
       let textoSegmentos;
       if (!vp8.segmentacion) textoSegmentos = 'Desactivados';
@@ -397,6 +415,7 @@
     }
 
     if (alph) {
+      if (alph.preproceso === 0) valores.alpha_quality = 100;
       const compresiones = ['Sin comprimir', 'Comprimido sin pérdida (VP8L)'];
       const filtros = ['Ninguno', 'Horizontal', 'Vertical', 'Gradiente'];
       filas.push(['Canal alfa: compresión', compresiones[alph.compresion] || `Código ${alph.compresion}`]);
@@ -419,7 +438,7 @@
     if (animado) filas.push(['Animación', `Sí (${frames} cuadros)`]);
     filas.push(['No guardados en el archivo', 'method, pass y near_lossless solo afectan al esfuerzo del encoder y no dejan huella']);
 
-    return { formato: 'WebP', tipo, ancho, alto, filas };
+    return { formato: 'WebP', tipo, ancho, alto, filas, valores };
   }
 
   /* =====================================================================

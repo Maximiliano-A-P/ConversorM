@@ -805,7 +805,7 @@ async function analizarArchivo(archivo) {
       ['Relación vs. sin comprimir (RGB 24 bits)', `${(pixeles * 3 / bytes.length).toFixed(1)} : 1`]
     );
   }
-  return filas;
+  return { filas, formatoId: r.formatoId, valores: r.valores || null };
 }
 
 function mostrarAnalisis(lista, filas) {
@@ -820,18 +820,31 @@ function mostrarAnalisis(lista, filas) {
 }
 
 const inputAnalisis = document.querySelector('#input_analisis');
+const btnTomarValores = document.querySelector('#btn_tomar_valores');
 const estadoAnalisis = document.querySelector('#estado_analisis');
 const resultadoAnalisis = document.querySelector('#resultado_analisis');
+
+/* Muestra analizada: solo la lee la tarjeta de análisis (no se comparte con las de conversión) */
+const CONVERSOR_POR_FORMATO = { jpeg: 'jpg', png: 'png', webp: 'webp' };
+let muestra = null; // { conversor: 'jpg' | 'png' | 'webp', valores: {...} }
 
 inputAnalisis.addEventListener('change', async () => {
   const archivo = inputAnalisis.files[0];
   if (!archivo) return;
   inputAnalisis.disabled = true;
+  btnTomarValores.disabled = true;
+  muestra = null;
   resultadoAnalisis.replaceChildren();
   estadoAnalisis.textContent = 'Analizando...';
   try {
-    mostrarAnalisis(resultadoAnalisis, await analizarArchivo(archivo));
+    const r = await analizarArchivo(archivo);
+    mostrarAnalisis(resultadoAnalisis, r.filas);
     estadoAnalisis.textContent = '';
+    const conversor = CONVERSOR_POR_FORMATO[r.formatoId];
+    if (conversor && r.valores) {
+      muestra = { conversor, valores: r.valores };
+      btnTomarValores.disabled = false;
+    }
   } catch (error) {
     console.error('Error analizando:', error);
     estadoAnalisis.textContent = 'No se pudo analizar: formato no reconocido o archivo dañado.';
@@ -839,4 +852,35 @@ inputAnalisis.addEventListener('change', async () => {
     inputAnalisis.value = '';
     inputAnalisis.disabled = false;
   }
+});
+
+/* Copia los valores de la muestra a las opciones de la tarjeta del mismo formato */
+btnTomarValores.addEventListener('click', () => {
+  if (!muestra) return;
+  const tarjeta = document.querySelector(`[data-conversor="${muestra.conversor}"]`);
+  if (!tarjeta) return;
+
+  // si esa tarjeta está convirtiendo (su input queda bloqueado), no se tocan sus opciones
+  if (tarjeta.querySelector('input[type="file"]').disabled) {
+    estadoAnalisis.textContent = 'Esa tarjeta está convirtiendo o todavía no está lista. Probá de nuevo en un momento.';
+    return;
+  }
+
+  Object.entries(muestra.valores).forEach(([nombre, valor]) => {
+    const campo = tarjeta.querySelector(`[data-opcion="${nombre}"]`);
+    if (!campo) return;
+    if (campo.type === 'checkbox') {
+      campo.checked = !!valor;
+    } else if (campo.tagName === 'SELECT') {
+      // solo si la lista tiene esa opción (ej: el submuestreo 4:2:2 no está en la tarjeta JPG)
+      if (!Array.from(campo.options).some(o => o.value === String(valor))) return;
+      campo.value = String(valor);
+    } else {
+      campo.value = valor;
+    }
+    // WebP: el cambio de "lossless" habilita o deshabilita los campos de modo con pérdida
+    campo.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  estadoAnalisis.textContent = `Valores copiados a la tarjeta ${muestra.conversor.toUpperCase()}.`;
 });
