@@ -178,6 +178,10 @@ function nombreUnico(nombre, usados) {
 }
 
 /* ---------- Tarjetas de conversión (JPG / PNG / WebP) ---------- */
+/* Opción global "Bloquear el mismo tipo" (compartida, solo se lee) */
+const chkBloquear = document.querySelector('#bloquear_mismo_tipo');
+let conversionesActivas = 0; // mientras haya alguna conversión en curso, la casilla queda bloqueada
+
 function iniciarConversor(tarjeta) {
   const formato = tarjeta.dataset.conversor; // 'jpg' | 'png' | 'webp'
   const input = tarjeta.querySelector('input[type="file"]');
@@ -189,6 +193,32 @@ function iniciarConversor(tarjeta) {
 
   let archivos = [];
   let ocupado = false;
+
+  // formato propio de la tarjeta (el que se bloquea): se reconoce por extensión
+  const acceptBase = input.getAttribute('accept');
+  const acceptPropio = input.dataset.acceptPropio || '';
+  const extPropias = acceptPropio.split(',').filter(a => a.startsWith('.'));
+  const esPropio = (archivo) => extPropias.some(ext => archivo.name.toLowerCase().endsWith(ext));
+
+  function mostrarSeleccion() {
+    contador.textContent = `Imágenes seleccionadas: ${archivos.length}`;
+    btn.disabled = archivos.length === 0;
+  }
+
+  // define qué formatos muestra el diálogo y, si se bloquea, quita los del mismo tipo ya elegidos
+  function aplicarBloqueo() {
+    const bloquear = chkBloquear.checked;
+    input.accept = bloquear ? acceptBase : `${acceptBase},${acceptPropio}`;
+    if (!bloquear || ocupado) return;
+    const permitidas = archivos.filter(a => !esPropio(a));
+    const quitadas = archivos.length - permitidas.length;
+    if (quitadas === 0) return;
+    archivos = permitidas;
+    mostrarSeleccion();
+    estado.textContent = `Se quitaron ${quitadas} imagen(es) del mismo formato (bloqueado).`;
+  }
+  chkBloquear.addEventListener('change', aplicarBloqueo);
+  aplicarBloqueo();
 
   // en WebP sin pérdida, alpha_quality / pass / sns_strength no se usan
   function actualizarDependencias() {
@@ -209,15 +239,19 @@ function iniciarConversor(tarjeta) {
 
   input.addEventListener('change', () => {
     if (ocupado) return;
-    archivos = Array.from(input.files);
-    contador.textContent = `Imágenes seleccionadas: ${archivos.length}`;
-    btn.disabled = archivos.length === 0;
-    estado.textContent = '';
+    const elegidas = Array.from(input.files);
+    // el diálogo puede mostrar "Todos los archivos": por eso también se filtra acá
+    archivos = chkBloquear.checked ? elegidas.filter(a => !esPropio(a)) : elegidas;
+    const omitidas = elegidas.length - archivos.length;
+    mostrarSeleccion();
+    estado.textContent = omitidas > 0 ? `Se omitieron ${omitidas} imagen(es) del mismo formato (bloqueado).` : '';
   });
 
   btn.addEventListener('click', async () => {
     if (ocupado || archivos.length === 0) return;
     ocupado = true;
+    conversionesActivas++;
+    chkBloquear.disabled = true;
 
     // las opciones se leen ACÁ, así siempre se usan los valores actuales
     const opciones = leerOpciones(tarjeta);
@@ -263,6 +297,8 @@ function iniciarConversor(tarjeta) {
       estado.textContent = 'Ocurrió un error durante la conversión.';
     } finally {
       ocupado = false;
+      conversionesActivas--;
+      chkBloquear.disabled = conversionesActivas > 0;
       input.disabled = false;
       bloquearCampos(false);
       btn.disabled = archivos.length === 0;

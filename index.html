@@ -10,15 +10,21 @@
 <header id="title">ConversorM</header>
 
 <main>
+  <div class="opcion-global">
+    <label for="bloquear_mismo_tipo" title="Si está marcado, cada tarjeta no deja elegir imágenes de su mismo formato (por ejemplo, la de JPG oculta los .jpg)">Bloquear el mismo tipo</label>
+    <input type="checkbox" id="bloquear_mismo_tipo" checked>
+  </div>
+
   <section class="tarjeta" data-conversor="jpg">
     <div class="tarjeta-cabecera">
       <h2>Imágenes → JPG</h2>
-      <p>Convertí JFIF, WEBP, BMP, AVIF e ICO a un formato universal.</p>
+      <p>Formatos aceptados: AVIF, BMP, GIF, ICO, JFIF, JPG, PNG, WEBP</p>
     </div>
     <div class="tarjeta-cuerpo">
       <label class="boton-archivo">Elegir imágenes
         <input type="file"
-          accept=".jfif,.webp,.bmp,.avif,.ico,image/jfif,image/webp,image/bmp,image/avif,image/x-icon"
+          accept=".avif,.bmp,.gif,.ico,.jfif,.png,.webp,image/avif,image/bmp,image/gif,image/x-icon,image/jfif,image/png,image/webp"
+          data-accept-propio=".jpg,.jpeg,image/jpeg"
           multiple hidden disabled>
       </label>
       <p class="contador">Imágenes seleccionadas: 0</p>
@@ -47,12 +53,13 @@
   <section class="tarjeta" data-conversor="png">
     <div class="tarjeta-cabecera">
       <h2>Imágenes → PNG</h2>
-      <p>Convertí cualquier imagen a PNG, sin pérdida y con transparencia.</p>
+      <p>Formatos aceptados: AVIF, BMP, GIF, ICO, JFIF, JPG, PNG, WEBP</p>
     </div>
     <div class="tarjeta-cuerpo">
       <label class="boton-archivo">Elegir imágenes
         <input type="file"
-          accept="image/*,.jfif,.avif,.ico"
+          accept=".avif,.bmp,.gif,.ico,.jfif,.jpg,.jpeg,.webp,image/avif,image/bmp,image/gif,image/x-icon,image/jfif,image/jpeg,image/webp"
+          data-accept-propio=".png,image/png"
           multiple hidden disabled>
       </label>
       <p class="contador">Imágenes seleccionadas: 0</p>
@@ -78,12 +85,13 @@
   <section class="tarjeta" data-conversor="webp">
     <div class="tarjeta-cabecera">
       <h2>Imágenes → WebP</h2>
-      <p>Convertí cualquier imagen a WebP, liviano y con transparencia.</p>
+      <p>Formatos aceptados: AVIF, BMP, GIF, ICO, JFIF, JPG, PNG, WEBP</p>
     </div>
     <div class="tarjeta-cuerpo">
       <label class="boton-archivo">Elegir imágenes
         <input type="file"
-          accept="image/*,.jfif,.avif,.ico"
+          accept=".avif,.bmp,.gif,.ico,.jfif,.jpg,.jpeg,.png,image/avif,image/bmp,image/gif,image/x-icon,image/jfif,image/jpeg,image/png"
+          data-accept-propio=".webp,image/webp"
           multiple hidden disabled>
       </label>
       <p class="contador">Imágenes seleccionadas: 0</p>

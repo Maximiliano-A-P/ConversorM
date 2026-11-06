@@ -27,6 +27,17 @@ main {
   gap: 3vh;
 }
 
+.opcion-global {
+  display: flex;
+  align-items: center;
+  gap: 1vw;
+  font-size: 1.8vh;
+  font-weight: bold;
+}
+
+.opcion-global input[type="checkbox"] { accent-color: #1F4B5C; cursor: pointer; }
+.opcion-global input[type="checkbox"]:disabled { cursor: not-allowed; }
+
 /* ---------- Tarjetas ---------- */
 .tarjeta {
   background: #fff;
