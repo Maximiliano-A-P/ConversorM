@@ -17,6 +17,8 @@
   <div class="opcion-global">
     <label for="modo_rapido" title="Si está marcado y elegís más de una imagen, se convierten varias al mismo tiempo (en segundo plano) en vez de una por una">Modo rápido</label>
     <input type="checkbox" id="modo_rapido" checked>
+    <label for="max_workers" title="Tope de workers simultáneos. 0 = sin tope propio (el sistema usa como máximo los núcleos del procesador − 1). Solo sirve para bajar ese límite, nunca para subirlo">Máximo de workers</label>
+    <input type="number" id="max_workers" min="0" step="1" value="0" style="width:5em">
   </div>
 
   <section class="tarjeta" data-conversor="jpg">

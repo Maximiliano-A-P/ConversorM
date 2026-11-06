@@ -124,12 +124,17 @@ async function convertirImagen(archivo, formato, op) {
 }
 
 /* ---------- Modo rápido: varios workers, cada uno con su propio codificador ---------- */
-const MAX_WORKERS = 8;
-
-function cantidadDeWorkers(totalArchivos) {
+function cantidadDeWorkers(totalArchivos, maximoUsuario) {
   const nucleos = navigator.hardwareConcurrency || 4;
-  // deja un núcleo libre para la interfaz y la decodificación de imágenes
-  return Math.max(1, Math.min(totalArchivos, Math.max(2, nucleos - 1), MAX_WORKERS));
+  // límite absoluto: núcleos del procesador − 1 (deja uno libre para la interfaz y la decodificación)
+  const limiteNatural = Math.max(1, nucleos - 1);
+  let limite = limiteNatural;
+  // el máximo del usuario solo puede BAJAR el límite natural, nunca subirlo
+  // (0, negativo, decimal o mayor que el natural = se ignora)
+  if (Number.isInteger(maximoUsuario) && maximoUsuario > 0 && maximoUsuario < limiteNatural) {
+    limite = maximoUsuario;
+  }
+  return Math.max(1, Math.min(totalArchivos, limite));
 }
 
 /* Crea un worker y espera a que cargue sus codificadores. Atiende UN trabajo a la vez. */
@@ -178,9 +183,9 @@ function crearTrabajador() {
 
 /* Convierte todas las imágenes a la vez repartidas entre varios workers.
    Devuelve { blobs, errores } (indexados como `archivos`) o null si no se pudo iniciar ningún worker. */
-async function convertirEnParalelo(archivos, formato, op, alProgresar) {
+async function convertirEnParalelo(archivos, formato, op, alProgresar, maximoUsuario) {
   const iniciados = await Promise.allSettled(
-    Array.from({ length: cantidadDeWorkers(archivos.length) }, () => crearTrabajador())
+    Array.from({ length: cantidadDeWorkers(archivos.length, maximoUsuario) }, () => crearTrabajador())
   );
   const pool = iniciados.filter(r => r.status === 'fulfilled').map(r => r.value);
   if (pool.length === 0) {
@@ -258,7 +263,28 @@ function nombreUnico(nombre, usados) {
 /* Opción global "Bloquear el mismo tipo" (compartida, solo se lee) */
 const chkBloquear = document.querySelector('#bloquear_mismo_tipo');
 const chkRapido = document.querySelector('#modo_rapido');
+const inputMaxWorkers = document.querySelector('#max_workers');
+
+/* Máximo de workers puesto por el usuario: solo enteros >= 0. Todo lo demás
+   (vacío, negativo, decimal, notación científica, enorme) se ignora y vale 0 = sin máximo */
+function leerMaximoWorkers() {
+  const texto = inputMaxWorkers.value.trim();
+  if (!/^\d+$/.test(texto)) return 0;
+  const n = Number(texto);
+  return Number.isSafeInteger(n) ? n : 0;
+}
 let conversionesActivas = 0; // mientras haya alguna conversión en curso, la casilla queda bloqueada
+
+// el campo de máximo solo está activo con "Modo rápido" marcado y sin conversión en curso
+function sincronizarMaxWorkers() {
+  inputMaxWorkers.disabled = !chkRapido.checked || conversionesActivas > 0;
+}
+chkRapido.addEventListener('change', sincronizarMaxWorkers);
+// deja en el campo lo que realmente se aplica (un valor inválido vuelve a 0)
+inputMaxWorkers.addEventListener('change', () => {
+  inputMaxWorkers.value = String(leerMaximoWorkers());
+});
+sincronizarMaxWorkers();
 
 function iniciarConversor(tarjeta) {
   const formato = tarjeta.dataset.conversor; // 'jpg' | 'png' | 'webp'
@@ -331,6 +357,7 @@ function iniciarConversor(tarjeta) {
     conversionesActivas++;
     chkBloquear.disabled = true;
     chkRapido.disabled = true;
+    sincronizarMaxWorkers();
 
     // las opciones se leen ACÁ, así siempre se usan los valores actuales
     const opciones = leerOpciones(tarjeta);
@@ -346,6 +373,7 @@ function iniciarConversor(tarjeta) {
 
       // se decide ACÁ (y se lee una sola vez): rápido solo con más de 1 imagen
       const modoRapido = chkRapido.checked && archivos.length > 1 && typeof Worker !== 'undefined';
+      const maximoWorkers = leerMaximoWorkers(); // se lee una sola vez, igual que modoRapido
       let resultadoRapido = null;
       let avisoFallo = '';
 
@@ -354,7 +382,7 @@ function iniciarConversor(tarjeta) {
         try {
           resultadoRapido = await convertirEnParalelo(archivos, formato, opciones, (hechas) => {
             estado.textContent = `Modo rápido: ${hechas} de ${archivos.length} convertidas...`;
-          });
+          }, maximoWorkers);
         } catch (error) {
           console.warn('Modo rápido no disponible:', error);
           avisoFallo = `[Modo rápido no disponible: ${error.message}] `;
@@ -412,6 +440,7 @@ function iniciarConversor(tarjeta) {
       conversionesActivas--;
       chkBloquear.disabled = conversionesActivas > 0;
       chkRapido.disabled = conversionesActivas > 0;
+      sincronizarMaxWorkers();
       input.disabled = false;
       bloquearCampos(false);
       btn.disabled = archivos.length === 0;
