@@ -1,0 +1,18 @@
+css\styles.css
+js\vendor\codecs.js
+js\vendor\mozjpeg_enc.wasm
+js\vendor\webp_enc_simd.wasm
+js\vendor\webp_enc.wasm
+js\analisis.js
+js\codificar.js
+js\fn.js
+js\gif.js
+js\gif.worker.js
+js\png.js
+js\worker_conv.js
+.gitignore
+app.py
+index.html
+
+copilado con 
+pyinstaller --onedir --windowed -y --clean --name ConversorM --add-data "index.html;." --add-data "css;css" --add-data "js;js" app.py

@@ -14,6 +14,10 @@
     <label for="bloquear_mismo_tipo" title="Si está marcado, cada tarjeta no deja elegir imágenes de su mismo formato (por ejemplo, la de JPG oculta los .jpg)">Bloquear el mismo tipo</label>
     <input type="checkbox" id="bloquear_mismo_tipo" checked>
   </div>
+  <div class="opcion-global">
+    <label for="modo_rapido" title="Si está marcado y elegís más de una imagen, se convierten varias al mismo tiempo (en segundo plano) en vez de una por una">Modo rápido</label>
+    <input type="checkbox" id="modo_rapido" checked>
+  </div>
 
   <section class="tarjeta" data-conversor="jpg">
     <div class="tarjeta-cabecera">
@@ -225,6 +229,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 <script src="js/vendor/codecs.js"></script>
 <script src="js/png.js"></script>
+<script src="js/codificar.js"></script>
 <script src="js/analisis.js"></script>
 <script src="js/gif.js"></script>
 <script src="js/fn.js"></script>

@@ -89,7 +89,8 @@ function cargarImagen(url) {
 }
 
 /* ---------- Conversión de una imagen (cada llamada usa su PROPIO canvas) ---------- */
-async function convertirImagen(archivo, formato, op) {
+/* Paso 1 (siempre en la página): decodifica la imagen a píxeles */
+async function decodificarAPixeles(archivo, formato) {
   const url = URL.createObjectURL(archivo);
   try {
     const imagen = await cargarImagen(url);
@@ -107,41 +108,117 @@ async function convertirImagen(archivo, formato, op) {
       ctx.fillRect(0, 0, ancho, alto);
     }
     ctx.drawImage(imagen, 0, 0);
-    const pixeles = ctx.getImageData(0, 0, ancho, alto);
-
-    if (formato === 'png') {
-      return codificarPNG(pixeles, { nivel: op.nivel, filtro: op.filtro, entrelazado: op.entrelazado });
-    }
-
-    if (!codecsListos) {
-      throw new Error('Los codificadores JPG/WebP no se cargaron (revisá la carpeta js/vendor)');
-    }
-
-    if (formato === 'jpg') {
-      const datos = await window.CodecsM.jpeg(pixeles, {
-        quality: op.quality,
-        baseline: false,
-        progressive: op.progressive,
-        optimize_coding: op.optimize,
-        auto_subsample: false,
-        chroma_subsample: op.subsampling === '444' ? 1 : 2,
-        quant_table: 0
-      });
-      return new Blob([datos], { type: 'image/jpeg' });
-    }
-
-    // webp
-    const opcionesWebp = op.lossless
-      ? { lossless: 1, exact: 1, quality: op.quality, method: op.method }
-      : {
-          lossless: 0, quality: op.quality, method: op.method,
-          alpha_quality: op.alpha_quality, pass: op.pass, sns_strength: op.sns_strength
-        };
-    const datos = await window.CodecsM.webp(pixeles, opcionesWebp);
-    return new Blob([datos], { type: 'image/webp' });
+    return ctx.getImageData(0, 0, ancho, alto);
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/* Modo normal: decodifica y codifica una imagen en la página (una por una) */
+async function convertirImagen(archivo, formato, op) {
+  const pixeles = await decodificarAPixeles(archivo, formato);
+  if (formato !== 'png' && !codecsListos) {
+    throw new Error('Los codificadores JPG/WebP no se cargaron (revisá la carpeta js/vendor)');
+  }
+  return codificarPixeles(pixeles, formato, op);
+}
+
+/* ---------- Modo rápido: varios workers, cada uno con su propio codificador ---------- */
+const MAX_WORKERS = 8;
+
+function cantidadDeWorkers(totalArchivos) {
+  const nucleos = navigator.hardwareConcurrency || 4;
+  // deja un núcleo libre para la interfaz y la decodificación de imágenes
+  return Math.max(1, Math.min(totalArchivos, Math.max(2, nucleos - 1), MAX_WORKERS));
+}
+
+/* Crea un worker y espera a que cargue sus codificadores. Atiende UN trabajo a la vez. */
+function crearTrabajador() {
+  return new Promise((resolve, reject) => {
+    const w = new Worker('js/worker_conv.js');
+    let pendiente = null; // { resolve, reject } del único trabajo en curso
+    let listo = false;
+
+    const limite = setTimeout(() => {
+      if (listo) return;
+      w.terminate();
+      reject(new Error('Tiempo agotado iniciando un worker'));
+    }, 20000);
+
+    const api = {
+      muerto: false,
+      codificar(pixeles, formato, op) {
+        return new Promise((res, rej) => {
+          pendiente = { resolve: res, reject: rej };
+          const buffer = pixeles.data.buffer;
+          w.postMessage({ formato, op, ancho: pixeles.width, alto: pixeles.height, buffer }, [buffer]);
+        });
+      },
+      terminar() { w.terminate(); }
+    };
+
+    function fallar(error) {
+      api.muerto = true;
+      if (!listo) { clearTimeout(limite); w.terminate(); reject(error); return; }
+      if (pendiente) { const p = pendiente; pendiente = null; p.reject(error); }
+    }
+
+    w.onmessage = (ev) => {
+      const m = ev.data;
+      if (m.listo) { listo = true; clearTimeout(limite); resolve(api); return; }
+      if (m.falloInicio) { fallar(new Error(m.falloInicio)); return; }
+      if (!pendiente) return;
+      const p = pendiente;
+      pendiente = null;
+      if (m.error) p.reject(new Error(m.error)); else p.resolve(m.blob);
+    };
+    w.onerror = (ev) => fallar(new Error(ev && ev.message ? ev.message : 'Error en el worker'));
+  });
+}
+
+/* Convierte todas las imágenes a la vez repartidas entre varios workers.
+   Devuelve { blobs, errores } (indexados como `archivos`) o null si no se pudo iniciar ningún worker. */
+async function convertirEnParalelo(archivos, formato, op, alProgresar) {
+  const iniciados = await Promise.allSettled(
+    Array.from({ length: cantidadDeWorkers(archivos.length) }, () => crearTrabajador())
+  );
+  const pool = iniciados.filter(r => r.status === 'fulfilled').map(r => r.value);
+  if (pool.length === 0) {
+    const rechazo = iniciados.find(r => r.status === 'rejected');
+    throw new Error(rechazo && rechazo.reason && rechazo.reason.message ? rechazo.reason.message : 'no arrancó ningún worker');
+  }
+
+  const blobs = new Array(archivos.length);
+  const errores = new Array(archivos.length);
+  let siguiente = 0;
+  let terminadas = 0;
+
+  async function bucle(trabajador) {
+    while (!trabajador.muerto) {
+      const i = siguiente++; // síncrono: dos bucles nunca toman el mismo índice
+      if (i >= archivos.length) return;
+      try {
+        const pixeles = await decodificarAPixeles(archivos[i], formato);
+        blobs[i] = await trabajador.codificar(pixeles, formato, op);
+      } catch (error) {
+        errores[i] = error;
+      }
+      terminadas++;
+      alProgresar(terminadas);
+    }
+  }
+
+  try {
+    await Promise.all(pool.map(bucle));
+  } finally {
+    pool.forEach(t => t.terminar());
+  }
+
+  // si todos los workers murieron, quedan imágenes sin tocar
+  for (let i = 0; i < archivos.length; i++) {
+    if (!blobs[i] && !errores[i]) errores[i] = new Error('no se procesó (falló el worker)');
+  }
+  return { blobs, errores };
 }
 
 /* Lee todos los campos [data-opcion] de una tarjeta: números (acotados a min/max), casillas y listas */
@@ -180,6 +257,7 @@ function nombreUnico(nombre, usados) {
 /* ---------- Tarjetas de conversión (JPG / PNG / WebP) ---------- */
 /* Opción global "Bloquear el mismo tipo" (compartida, solo se lee) */
 const chkBloquear = document.querySelector('#bloquear_mismo_tipo');
+const chkRapido = document.querySelector('#modo_rapido');
 let conversionesActivas = 0; // mientras haya alguna conversión en curso, la casilla queda bloqueada
 
 function iniciarConversor(tarjeta) {
@@ -252,6 +330,7 @@ function iniciarConversor(tarjeta) {
     ocupado = true;
     conversionesActivas++;
     chkBloquear.disabled = true;
+    chkRapido.disabled = true;
 
     // las opciones se leen ACÁ, así siempre se usan los valores actuales
     const opciones = leerOpciones(tarjeta);
@@ -265,20 +344,53 @@ function iniciarConversor(tarjeta) {
       const fallidos = [];
       let convertidas = 0;
 
-      for (let i = 0; i < archivos.length; i++) {
-        const archivo = archivos[i];
-        estado.textContent = `Convirtiendo ${i + 1} de ${archivos.length}...`;
+      // se decide ACÁ (y se lee una sola vez): rápido solo con más de 1 imagen
+      const modoRapido = chkRapido.checked && archivos.length > 1 && typeof Worker !== 'undefined';
+      let resultadoRapido = null;
+      let avisoFallo = '';
+
+      if (modoRapido) {
+        estado.textContent = 'Iniciando modo rápido...';
         try {
-          const blob = await convertirImagen(archivo, formato, opciones);
-          const nuevoNombre = archivo.name.replace(/\.[^.]+$/, '') + '.' + formato;
-          zip.file(nombreUnico(nuevoNombre, usados), blob);
-          convertidas++;
+          resultadoRapido = await convertirEnParalelo(archivos, formato, opciones, (hechas) => {
+            estado.textContent = `Modo rápido: ${hechas} de ${archivos.length} convertidas...`;
+          });
         } catch (error) {
-          console.error('Error procesando:', archivo.name, error);
-          fallidos.push(`${archivo.name} (${error && error.message ? error.message : error})`);
+          console.warn('Modo rápido no disponible:', error);
+          avisoFallo = `[Modo rápido no disponible: ${error.message}] `;
         }
-        // deja respirar a la interfaz entre imagen e imagen
-        await new Promise(r => setTimeout(r, 0));
+      }
+
+      if (resultadoRapido) {
+        // los nombres se asignan en el orden original, igual que en el modo normal
+        for (let i = 0; i < archivos.length; i++) {
+          const archivo = archivos[i];
+          if (resultadoRapido.blobs[i]) {
+            const nuevoNombre = archivo.name.replace(/\.[^.]+$/, '') + '.' + formato;
+            zip.file(nombreUnico(nuevoNombre, usados), resultadoRapido.blobs[i]);
+            convertidas++;
+          } else {
+            const error = resultadoRapido.errores[i];
+            console.error('Error procesando:', archivo.name, error);
+            fallidos.push(`${archivo.name} (${error && error.message ? error.message : error})`);
+          }
+        }
+      } else {
+        for (let i = 0; i < archivos.length; i++) {
+          const archivo = archivos[i];
+          estado.textContent = `${avisoFallo}Convirtiendo ${i + 1} de ${archivos.length}...`;
+          try {
+            const blob = await convertirImagen(archivo, formato, opciones);
+            const nuevoNombre = archivo.name.replace(/\.[^.]+$/, '') + '.' + formato;
+            zip.file(nombreUnico(nuevoNombre, usados), blob);
+            convertidas++;
+          } catch (error) {
+            console.error('Error procesando:', archivo.name, error);
+            fallidos.push(`${archivo.name} (${error && error.message ? error.message : error})`);
+          }
+          // deja respirar a la interfaz entre imagen e imagen
+          await new Promise(r => setTimeout(r, 0));
+        }
       }
 
       if (convertidas > 0) {
@@ -290,7 +402,7 @@ function iniciarConversor(tarjeta) {
       if (fallidos.length > 0) {
         estado.textContent = `Terminado, pero no se pudieron convertir: ${fallidos.join(', ')}`;
       } else {
-        estado.textContent = 'Listo.';
+        estado.textContent = avisoFallo ? `Listo. ${avisoFallo}` : 'Listo.';
       }
     } catch (error) {
       console.error('Error en la conversión:', error);
@@ -299,6 +411,7 @@ function iniciarConversor(tarjeta) {
       ocupado = false;
       conversionesActivas--;
       chkBloquear.disabled = conversionesActivas > 0;
+      chkRapido.disabled = conversionesActivas > 0;
       input.disabled = false;
       bloquearCampos(false);
       btn.disabled = archivos.length === 0;
